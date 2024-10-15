@@ -152,16 +152,18 @@ void removeWaves(double percentage, int size, complex* values){
     int numRemove = blockSize*percentage;
     for (int i = 0; i < size-blockSize; i += blockSize){
         for (int j = 0; j < numRemove; j ++){
-            int minIndex = 0; //This code will not work -> it will only set 1 frequency to 0
-            double minAmplitude = values[i].getMagnitude();
+            int minIndex = -1;
+            double minMag = -1;
             for (int k = 1; k < blockSize; k ++){
-                double a = values[i + k].getMagnitude();
-                if (a < minAmplitude){
-                    minAmplitude = a;
+                double a = values[i + k].real; //.getMagnitude();
+                if (a != 0 && (minIndex == -1 || a < minMag)){
+                    minMag = a;
                     minIndex = k;
                 }
             }
-            values[i+minIndex] = complex(0,0);
+            if (minIndex != -1){
+                values[i+minIndex] = complex(0,0);
+            }
         }
     }
 }
