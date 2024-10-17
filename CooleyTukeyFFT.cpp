@@ -200,6 +200,14 @@ void convertToPCM(complex** complexSamples, int numSamples, int numChannels, vec
     for (int i = 0; i < numSamples; i ++){
         for (int j = 0; j < numChannels; j ++){
             int val = complexSamples[j][i].real;
+            if (val > (1 << (byteDepth * 8))){
+                //cout << "overflow" << endl;
+                val = (1 << (byteDepth * 8)) - 1;
+            }
+            if (val <= -1 * (1 << (byteDepth * 8))){
+                val = (1 << (byteDepth * 8));
+                //cout << "underflow" << endl;
+            }
             for (int k = 0; k < byteDepth; k ++){
                 pcmSamples.push_back((val >> (byteDepth - i - i)*8) & 0xFF);
             }
