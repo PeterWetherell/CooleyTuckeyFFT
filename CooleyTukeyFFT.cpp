@@ -294,28 +294,24 @@ int main(int argc, char *argv[]){
     readData(data, wavFile, bytesPerSample, numChannels);
     fclose(wavFile);
 
-    cout << data[0][0].real << " " << data[0][0].imaginary << endl;
-
     cout << "Finished reading file" << endl;
 
-    cooleyTukeyInPlace(data[0]);
+    for (int i = 0; i < numChannels; i ++){
+        cooleyTukeyInPlace(data[i]);
 
-    cout << "Finished converting file to fourier" << endl;
+        cout << "Finished converting channel " << i << " to fourier" << endl;
 
-    removeWaves(percentage, data[0]);
+        removeWaves(percentage, data[i]);
 
-    cout << "Finished removing the most important parts" << endl;
-    
-    inverseCooleyTukeyInPlace(data[0]);
+        cout << "Finished removing the most important parts" << endl;
+        
+        inverseCooleyTukeyInPlace(data[i]);
 
-    cout << "Finished converting back to origional"  << endl;
-
-    cout << data[0][0].real << " " << data[0][0].imaginary << endl;
+        cout << "Finished converting channel " << i << " back to origional"  << endl;
+    }
 
     vector<unsigned char> pcmSamples;
     convertToPCM(data, numChannels, pcmSamples, bytesPerSample);
-
-    //cout << pcmSamples.size() << " " << wavHeader.Subchunk2Size << endl;
 
     string outputFilePath = "output.wav";
     writeWavFile(outputFilePath,wavHeader,pcmSamples);
