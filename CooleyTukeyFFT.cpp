@@ -3,6 +3,7 @@
 #include <cmath>
 #include <string>
 #include <fstream>
+#include <string.h>
 
 using namespace std;
 using std::string;
@@ -91,35 +92,36 @@ void cooleyTukey(vector<complex>& values){
 int blockSize = 1024;
 
 //apply Cooley-Tukey Recursively
-void CooleyTukeyInPlaceRec(int start, int indexing, complex* values, complex* twiddle, complex* savedTwiddle){//convert the algorithm to work in place
+void CooleyTukeyInPlaceRec(int startIndex, int start, int indexing, vector<complex>& values, complex* twiddle, complex* savedTwiddle){//convert the algorithm to work in place
     if (blockSize == indexing){ //Base case -> no more edits to the array
         return;
     }
     
     //In place recurse on the even and odd
-    CooleyTukeyInPlaceRec(start,indexing*2, values, twiddle, savedTwiddle); //Even
-    CooleyTukeyInPlaceRec(start + indexing,indexing*2, values, twiddle, savedTwiddle); //Odd
+    CooleyTukeyInPlaceRec(startIndex, start,indexing*2, values, twiddle, savedTwiddle); //Even
+    CooleyTukeyInPlaceRec(startIndex, start + indexing,indexing*2, values, twiddle, savedTwiddle); //Odd
 
     int halfN = blockSize/(2*indexing);
     
     for (int i = 0 ; i < halfN; i ++){ //combine both even and odd
         //cout << values[start+indexing + i*2*indexing].real << " " << values[start + i*2*indexing].real << " " << twiddle[i*indexing].real << ", ";
 
-        complex t = twiddle[i*indexing] * values[start+indexing + i*2*indexing];
+        complex t = twiddle[i*indexing] * values[startIndex + start + indexing + i*2*indexing];
 
         //Do the first half
-        values[start + indexing*i] = values[start + i*2*indexing] + t; //even + t
+        values[startIndex + start + indexing*i] = values[startIndex + start + i*2*indexing] + t; //even + t
 
         //Save the twiddle factor
         savedTwiddle[i] = complex(-2.0,0)*t;
     }
     for (int i = 0 ; i < halfN; i ++){ //combine both even and odd
-        values[start + indexing*(i+halfN)] = values[start + indexing*i] + savedTwiddle[i]; //even - t = (even+t) - 2*t
+        values[startIndex + start + indexing*(i+halfN)] = values[startIndex + start + indexing*i] + savedTwiddle[i]; //even - t = (even+t) - 2*t
     }
 }
 
 //Setup for the inplace
-void cooleyTukeyInPlace(int size, complex* values){ 
+void cooleyTukeyInPlace(vector<complex>& values){ 
+    int size = values.size();
     complex* twiddle = new complex[size/2];
     for (int i = 0 ; i < size/2; i ++){ //calculate all the twidles.
         double theta =  -2 * PI * i / size;
@@ -127,16 +129,18 @@ void cooleyTukeyInPlace(int size, complex* values){
     }
     complex* savedTwiddle = new complex[size/2];
     for (int i = 0; i < size-blockSize; i += blockSize){
-        CooleyTukeyInPlaceRec(0, 1, values+i, twiddle, savedTwiddle);
+        CooleyTukeyInPlaceRec(i, 0, 1, values, twiddle, savedTwiddle);
     }
 }
 
-void inverseCooleyTukeyInPlace(int size, complex* values){
+void inverseCooleyTukeyInPlace(vector<complex>& values){
+    int size = values.size();
+
     for (int i = 0; i < size ; i ++){ //get the complex conjugate
         values[i].imaginary = -values[i].imaginary; // Conjugate
     }
 
-    cooleyTukeyInPlace(size, values); //Do FFT on conjugate
+    cooleyTukeyInPlace(values); //Do FFT on conjugate
 
     for (int i = 0; i < size ; i ++){ //get the complex conjugate again
         values[i].imaginary = -values[i].imaginary; // Conjugate
@@ -148,7 +152,9 @@ void inverseCooleyTukeyInPlace(int size, complex* values){
 
 }
 
-void removeWaves(double percentage, int size, complex* values){
+void removeWaves(double percentage, vector<complex>& values){
+    int size = values.size();
+
     int numRemove = blockSize*percentage;
     for (int i = 0; i < size-blockSize; i += blockSize){
         for (int j = 0; j < numRemove; j ++){
@@ -195,22 +201,51 @@ void writeWavFile(const string& outputFilePath, const wav_hdr& header, const vec
     fclose(outFile);
 }
 
-void convertToPCM(complex** complexSamples, int numSamples, int numChannels, vector<unsigned char>& pcmSamples, int byteDepth) {
+void convertToPCM(vector<complex>* samples, int numChannels, vector<unsigned char>& pcmSamples, int byteDepth) {
     pcmSamples.clear();
-    for (int i = 0; i < numSamples; i ++){
+
+    cout << "first 10 samples in all channels" << endl;
+
+    for (int i = 0; i < samples[0].size(); i ++){
         for (int j = 0; j < numChannels; j ++){
-            int val = complexSamples[j][i].real;
-            if (val > (1 << (byteDepth * 8))){
-                //cout << "overflow" << endl;
-                val = (1 << (byteDepth * 8)) - 1;
-            }
-            if (val <= -1 * (1 << (byteDepth * 8))){
-                val = (1 << (byteDepth * 8));
-                //cout << "underflow" << endl;
-            }
+            int val = samples[j][i].real;
             for (int k = 0; k < byteDepth; k ++){
-                pcmSamples.push_back((val >> (byteDepth - i - i)*8) & 0xFF);
+                unsigned char byte = (val >> (k * 8)) & 0xFF;
+                if (i < 10){
+                    cout << (int)byte << " ";
+                }
+                pcmSamples.push_back(byte);
             }
+        }
+    }
+}
+
+void readData(vector<complex>*& data, FILE *wavFile,  int bytesPerSample, int numChannels){
+    unsigned char sampleBytes[bytesPerSample];
+
+    bool keepReading = true;
+
+    cout << "first 10 samples in all channels" << endl;
+
+    for (int i = 0; keepReading; i ++){
+        for (int j = 0; j < numChannels; j ++){
+            memset(sampleBytes, 0 , sizeof(sampleBytes));
+            if (fread(sampleBytes,1,bytesPerSample,wavFile) != bytesPerSample){
+                cout << endl << "Error or end of file reached after reading " << i << " samples." << endl;
+                keepReading = false;
+                break;
+            }
+            int sample = 0;
+            for (int k = 0; k < bytesPerSample; k ++){ //(sampleBytes[2] << 16) | (sampleBytes[1] << 8) | sampleBytes[0];
+                if (i < 10){
+                    cout << (int)sampleBytes[k] << " ";
+                }
+                sample |= sampleBytes[k] << (k*8); //shift the previous contents and load value into the sample
+            }
+            if (sample & (1 << (bytesPerSample * 8 -1))) { //check if negative
+                sample |= ~((1 << (bytesPerSample * 8)) - 1);  // Sign extend
+            }
+            data[j].push_back( complex( (double) sample, 0.0) );
         }
     }
 }
@@ -251,57 +286,34 @@ int main(int argc, char *argv[]){
     }
 
     fread(&wavHeader,headerSize,1,wavFile);
-    filelength = getFileSize(wavFile);
-
-    cout << "File is                    :" << filelength << " bytes." << endl;
 
     int bytesPerSample = wavHeader.bitsPerSample/8;
     int numChannels = wavHeader.NumOfChan;
-    int numSamples = wavHeader.Subchunk2Size / (numChannels * bytesPerSample);  
-    complex** data = new complex*[numChannels];
-    for (int i = 0; i < numChannels; i ++){
-        data[i] = new complex[numSamples];
-    }
-
-    for (int i = 0; i < numSamples; i ++){
-        for (int j = 0; j < numChannels; j ++){
-            unsigned char sampleBytes[bytesPerSample];
-            if (fread(sampleBytes,1,bytesPerSample,wavFile) != bytesPerSample){
-                cout << "error " << i << endl;
-                delete[] data;
-                fclose(wavFile);
-                return -1;
-            }
-            int sample = (sampleBytes[2] << 16) | (sampleBytes[1] << 8) | sampleBytes[0];
-            if (sample & 0x800000) {
-                sample |= 0xFF000000;
-            }
-            data[j][i] = complex((double)sample , 0.0);
-        }
-    }
-
+    
+    vector<complex>* data = new vector<complex>[numChannels];
+    readData(data, wavFile, bytesPerSample, numChannels);
     fclose(wavFile);
 
     cout << data[0][0].real << " " << data[0][0].imaginary << endl;
 
     cout << "Finished reading file" << endl;
 
-    cooleyTukeyInPlace(numSamples, data[0]);
+    cooleyTukeyInPlace(data[0]);
 
     cout << "Finished converting file to fourier" << endl;
 
-    removeWaves(percentage, numSamples, data[0]);
+    removeWaves(percentage, data[0]);
 
     cout << "Finished removing the most important parts" << endl;
     
-    inverseCooleyTukeyInPlace(numSamples, data[0]);
+    inverseCooleyTukeyInPlace(data[0]);
 
     cout << "Finished converting back to origional"  << endl;
 
     cout << data[0][0].real << " " << data[0][0].imaginary << endl;
 
     vector<unsigned char> pcmSamples;
-    convertToPCM(data, numSamples, numChannels, pcmSamples, bytesPerSample);
+    convertToPCM(data, numChannels, pcmSamples, bytesPerSample);
 
     //cout << pcmSamples.size() << " " << wavHeader.Subchunk2Size << endl;
 
